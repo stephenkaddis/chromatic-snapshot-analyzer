@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromatic Snapshot Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f4f0;
+    color: #1a1a18;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 0.25rem; }
+  p.subtitle { font-size: 14px; color: #5f5e5a; margin-bottom: 2rem; }
+
+  #drop-zone {
+    border: 1.5px dashed #b4b2a9;
+    border-radius: 12px;
+    background: #fff;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    margin-bottom: 2rem;
+  }
+  #drop-zone.drag-over { border-color: #378ADD; background: #e6f1fb; }
+  #drop-zone .icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+  #drop-zone p { font-size: 15px; color: #5f5e5a; margin-bottom: 0.5rem; }
+  #drop-zone .hint { font-size: 13px; color: #888780; }
+  #drop-zone input[type="file"] { display: none; }
+  #file-label {
+    display: inline-block;
+    margin-top: 1rem;
+    padding: 8px 20px;
+    border: 1px solid #b4b2a9;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    background: #fff;
+    transition: background 0.1s;
+  }
+  #file-label:hover { background: #f1efe8; }
+
+  #controls {
+    display: none;
+    background: #fff;
+    border: 0.5px solid #d3d1c7;
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+    align-items: flex-end;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .control-group { display: flex; flex-direction: column; gap: 6px; }
+  .control-group label { font-size: 12px; color: #5f5e5a; font-weight: 500; }
+  .control-group input[type="date"] {
+    padding: 7px 10px;
+    border: 1px solid #b4b2a9;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    background: #fff;
+    color: #1a1a18;
+    cursor: pointer;
+  }
+  .control-group input[type="date"]:focus { outline: 2px solid #378ADD; border-color: transparent; }
+
+  button#apply-btn {
+    padding: 8px 20px;
+    background: #1a1a18;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.1s;
+    height: 36px;
+  }
+  button#apply-btn:hover { opacity: 0.85; }
+
+  #file-name {
+    font-size: 13px;
+    color: #5f5e5a;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+  #file-name span { color: #1a1a18; font-weight: 500; }
+
+  #stats {
+    display: none;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 1.5rem;
+  }
+  .stat-card {
+    background: #fff;
+    border: 0.5px solid #d3d1c7;
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+  }
+  .stat-card .label { font-size: 12px; color: #5f5e5a; margin-bottom: 4px; }
+  .stat-card .value { font-size: 22px; font-weight: 500; }
+  .stat-card .sub { font-size: 12px; color: #888780; margin-top: 2px; }
+
+  .card {
+    background: #fff;
+    border: 0.5px solid #d3d1c7;
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .card.hidden { display: none; }
+
+  .section-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: #5f5e5a;
+    margin-bottom: 1rem;
+  }
+  .section-subtitle {
+    font-size: 12px;
+    color: #888780;
+    margin-top: -0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: #5f5e5a;
+  }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .legend-line { width: 18px; height: 2px; flex-shrink: 0; border-radius: 1px; }
+
+  .chart-wrap { position: relative; width: 100%; }
+
+  .turbo-note { font-size: 12px; color: #888780; margin-top: 1rem; }
+
+  /* TurboSnap health stats */
+  #turbo-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 1.5rem;
+  }
+  .turbo-stat {
+    background: #f5f4f0;
+    border-radius: 8px;
+    padding: 0.875rem 1rem;
+  }
+  .turbo-stat .label { font-size: 11px; color: #888780; margin-bottom: 3px; }
+  .turbo-stat .value { font-size: 20px; font-weight: 500; }
+  .turbo-stat.good .value { color: #0f6e56; }
+  .turbo-stat.warn .value { color: #854f0b; }
+  .turbo-stat.bad  .value { color: #a32d2d; }
+
+  /* Bail reason bars */
+  .bail-reasons { margin-top: 1rem; }
+  .bail-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .bail-label { font-size: 12px; color: #1a1a18; width: 200px; flex-shrink: 0; font-family: monospace; }
+  .bail-bar-wrap { flex: 1; background: #f1efe8; border-radius: 4px; height: 8px; overflow: hidden; }
+  .bail-bar { height: 100%; border-radius: 4px; background: #D85A30; transition: width 0.3s; }
+  .bail-bar.ok { background: #BA7517; }
+  .bail-bar.minor { background: #B4B2A9; }
+  .bail-count { font-size: 12px; color: #5f5e5a; width: 80px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+  /* Diagnosis callouts */
+  .diagnosis {
+    margin-top: 1rem;
+    padding: 0.875rem 1rem;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    border-left: 3px solid;
+  }
+  .diagnosis.info { background: #e6f1fb; border-color: #378ADD; color: #0c447c; }
+  .diagnosis.warn { background: #faeeda; border-color: #BA7517; color: #633806; }
+  .diagnosis.good { background: #e1f5ee; border-color: #0f6e56; color: #04342c; }
+
+  /* Table */
+  #table-section {
+    background: #fff;
+    border: 0.5px solid #d3d1c7;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 2rem;
+    display: none;
+  }
+  .table-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 0.5px solid #d3d1c7;
+    font-size: 14px;
+    font-weight: 500;
+    color: #5f5e5a;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .table-header .row-count { font-weight: 400; font-size: 13px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left;
+    padding: 10px 16px;
+    font-weight: 500;
+    font-size: 12px;
+    color: #888780;
+    background: #f5f4f0;
+    border-bottom: 0.5px solid #d3d1c7;
+    white-space: nowrap;
+  }
+  td {
+    padding: 9px 16px;
+    border-bottom: 0.5px solid #f1efe8;
+    color: #1a1a18;
+    white-space: nowrap;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafaf8; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .badge-high { background: #b5d4f4; color: #0c447c; }
+  .badge-low  { background: #f1efe8; color: #5f5e5a; }
+
+  #no-data {
+    display: none;
+    text-align: center;
+    padding: 3rem;
+    color: #888780;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Chromatic Snapshot Analyzer</h1>
+<p class="subtitle">Drag in your usage report CSV to explore snapshot usage by day</p>
+
+<div id="drop-zone">
+  <div class="icon">📊</div>
+  <p>Drop your Chromatic CSV here</p>
+  <p class="hint">chromatic-usage-report-*.csv</p>
+  <label id="file-label" for="csv-input">Choose file</label>
+  <input type="file" id="csv-input" accept=".csv">
+</div>
+
+<div id="controls">
+  <div class="control-group">
+    <label for="start-date">From</label>
+    <input type="date" id="start-date">
+  </div>
+  <div class="control-group">
+    <label for="end-date">To</label>
+    <input type="date" id="end-date">
+  </div>
+  <button id="apply-btn">Apply</button>
+  <div id="file-name">📄 <span id="fname"></span></div>
+</div>
+
+<!-- Snapshot summary stats -->
+<div id="stats">
+  <div class="stat-card">
+    <div class="label">Total effective snapshots</div>
+    <div class="value" id="stat-total">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Avg per active day</div>
+    <div class="value" id="stat-avg-active">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Avg per calendar day</div>
+    <div class="value" id="stat-avg-cal">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Active days</div>
+    <div class="value" id="stat-days">—</div>
+    <div class="sub" id="stat-days-sub">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Peak day</div>
+    <div class="value" id="stat-peak">—</div>
+    <div class="sub" id="stat-peak-sub">—</div>
+  </div>
+</div>
+
+<!-- Snapshot chart -->
+<div id="chart-section" class="card hidden">
+  <div class="section-title">Effective snapshots per day</div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:#378ADD;"></div>Chrome</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#1D9E75;"></div>Firefox</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#D85A30;"></div>Safari</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#BA7517;"></div>Edge</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#7F77DD;"></div>Accessibility</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#B4B2A9;"></div>TurboSnaps (×⅕)</div>
+    <div class="legend-item"><div class="legend-line" style="background:#E24B4A;"></div>Trend</div>
+  </div>
+  <div class="chart-wrap" id="chart-wrap">
+    <canvas id="myChart" role="img" aria-label="Stacked bar chart of effective snapshots per day with trend line"></canvas>
+  </div>
+  <p class="turbo-note">TurboSnaps counted at 1/5 of a full snapshot. Trend line shows linear regression over the period.</p>
+</div>
+
+<!-- Builds per day chart -->
+<div id="builds-section" class="card hidden">
+  <div class="section-title">Builds per day</div>
+  <div class="section-subtitle">Total CI builds run, including those without TurboSnap</div>
+  <div class="chart-wrap" id="builds-chart-wrap">
+    <canvas id="buildsChart" role="img" aria-label="Line chart of total builds per day with trend"></canvas>
+  </div>
+</div>
+
+<!-- TurboSnap health -->
+<div id="turbo-section" class="card hidden">
+  <div class="section-title">TurboSnap health</div>
+  <div class="section-subtitle">How effectively TurboSnap is reducing your snapshot usage</div>
+
+  <div id="turbo-stats">
+    <div class="turbo-stat" id="ts-total">
+      <div class="label">Total builds</div>
+      <div class="value" id="ts-total-val">—</div>
+    </div>
+    <div class="turbo-stat" id="ts-turbo-pct-card">
+      <div class="label">Builds using TurboSnap</div>
+      <div class="value" id="ts-turbo-pct">—</div>
+    </div>
+    <div class="turbo-stat" id="ts-bail-pct-card">
+      <div class="label">Builds that bailed</div>
+      <div class="value" id="ts-bail-pct">—</div>
+    </div>
+    <div class="turbo-stat" id="ts-savings-card">
+      <div class="label">Est. snapshot savings</div>
+      <div class="value" id="ts-savings">—</div>
+    </div>
+  </div>
+
+  <div class="bail-reasons" id="bail-reasons-wrap" style="display:none;">
+    <div style="font-size:12px; font-weight:500; color:#5f5e5a; margin-bottom:10px;">Bail reason breakdown</div>
+    <div id="bail-reasons-list"></div>
+  </div>
+
+  <div id="turbo-diagnosis"></div>
+</div>
+
+<!-- Daily table -->
+<div id="table-section">
+  <div class="table-header">
+    Daily breakdown
+    <span class="row-count" id="row-count"></span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th class="num">Builds</th>
+        <th class="num">TurboSnaps</th>
+        <th class="num">Chrome</th>
+        <th class="num">Firefox</th>
+        <th class="num">Safari</th>
+        <th class="num">Edge</th>
+        <th class="num">Accessibility</th>
+        <th class="num">Effective total</th>
+      </tr>
+    </thead>
+    <tbody id="table-body"></tbody>
+  </table>
+</div>
+
+<div id="no-data">No data found for the selected date range.</div>
+
+<script>
+let allRows = [];
+let allBuilds = [];
+let snapChart = null;
+let buildsChart = null;
+
+const dropZone = document.getElementById('drop-zone');
+const csvInput = document.getElementById('csv-input');
+const controls = document.getElementById('controls');
+const statsEl  = document.getElementById('stats');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+});
+dropZone.addEventListener('click', () => csvInput.click());
+csvInput.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+document.getElementById('apply-btn').addEventListener('click', render);
+document.getElementById('start-date').addEventListener('change', render);
+document.getElementById('end-date').addEventListener('change', render);
+
+function loadFile(file) {
+  document.getElementById('fname').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const { rows, builds } = parseCSV(e.target.result);
+    allRows = rows;
+    allBuilds = builds;
+    if (allRows.length === 0) return;
+
+    const dates = allRows.map(r => r.date).sort();
+    const end = new Date(dates[dates.length - 1] + 'T00:00:00');
+    const start = new Date(end);
+    start.setDate(start.getDate() - 29);
+
+    document.getElementById('start-date').value = toISO(start);
+    document.getElementById('end-date').value   = toISO(end);
+    document.getElementById('start-date').min = dates[0];
+    document.getElementById('start-date').max = dates[dates.length - 1];
+    document.getElementById('end-date').min   = dates[0];
+    document.getElementById('end-date').max   = dates[dates.length - 1];
+
+    dropZone.style.display = 'none';
+    controls.style.display = 'flex';
+    render();
+  };
+  reader.readAsText(file);
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.trim());
+  const idx = {
+    date:    headers.indexOf('Date'),
+    turbo:   headers.indexOf('TurboSnaps'),
+    chrome:  headers.indexOf('Chrome snapshots'),
+    firefox: headers.indexOf('Firefox snapshots'),
+    safari:  headers.indexOf('Safari snapshots'),
+    edge:    headers.indexOf('Edge snapshots'),
+    a11y:    headers.indexOf('Accessibility snapshots'),
+    bail:    headers.indexOf('TurboSnap Bail Reason'),
+  };
+
+  const byDate = {};
+  const buildsList = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const raw = lines[i];
+    const cols = raw.split(',');
+    if (cols.length < 3) continue;
+    const dateStr = (cols[idx.date] || '').trim().slice(0, 10);
+    if (!dateStr || dateStr.length < 10) continue;
+
+    const n = k => { const v = idx[k] >= 0 ? parseFloat(cols[idx[k]]) : 0; return isNaN(v) ? 0 : v; };
+    const s = k => idx[k] >= 0 ? (cols[idx[k]] || '').trim() : '';
+
+    const turbo   = n('turbo');
+    const chrome  = n('chrome');
+    const firefox = n('firefox');
+    const safari  = n('safari');
+    const edge    = n('edge');
+    const a11y    = n('a11y');
+    const bail    = s('bail');
+
+    if (!byDate[dateStr]) {
+      byDate[dateStr] = {
+        date: dateStr,
+        turbo: 0, chrome: 0, firefox: 0, safari: 0, edge: 0, a11y: 0,
+        builds: 0, turboBuilds: 0, bailBuilds: 0,
+        bailReasons: {}
+      };
+    }
+    const d = byDate[dateStr];
+    d.turbo   += turbo;
+    d.chrome  += chrome;
+    d.firefox += firefox;
+    d.safari  += safari;
+    d.edge    += edge;
+    d.a11y    += a11y;
+    d.builds++;
+    if (turbo > 0) d.turboBuilds++;
+    if (bail) {
+      d.bailBuilds++;
+      d.bailReasons[bail] = (d.bailReasons[bail] || 0) + 1;
+    }
+
+    buildsList.push({ date: dateStr, turbo, chrome, firefox, safari, edge, a11y, bail });
+  }
+
+  const rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+  return { rows, builds: buildsList };
+}
+
+function effective(r) {
+  return r.turbo / 5 + r.chrome + r.firefox + r.safari + r.edge + r.a11y;
+}
+
+function toISO(d) { return d.toISOString().slice(0, 10); }
+function fmt(n) { return Math.round(n).toLocaleString(); }
+function pct(n) { return (n * 100).toFixed(1) + '%'; }
+
+function fmtDate(iso) {
+  const [y, m, d] = iso.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[+m - 1]} ${+d}, ${y}`;
+}
+function fmtShort(iso) {
+  const [, m, d] = iso.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[+m - 1]} ${+d}`;
+}
+function calDays(s, e) {
+  return Math.round((new Date(e + 'T00:00:00') - new Date(s + 'T00:00:00')) / 86400000) + 1;
+}
+
+function linReg(data) {
+  const n = data.length;
+  if (n < 2) return data.slice();
+  const xm = (n - 1) / 2;
+  const ym = data.reduce((s, v) => s + v, 0) / n;
+  let num = 0, den = 0;
+  data.forEach((y, x) => { num += (x - xm) * (y - ym); den += (x - xm) ** 2; });
+  const slope = den ? num / den : 0;
+  const intercept = ym - slope * xm;
+  return data.map((_, x) => Math.max(0, Math.round(intercept + slope * x)));
+}
+
+function render() {
+  const start = document.getElementById('start-date').value;
+  const end   = document.getElementById('end-date').value;
+  if (!start || !end || start > end) return;
+
+  const filtered = allRows.filter(r => r.date >= start && r.date <= end);
+
+  ['stats','chart-section','builds-section','turbo-section','table-section'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.display = 'none'; el.classList && el.classList.add('hidden'); }
+  });
+  document.getElementById('no-data').style.display = 'none';
+
+  if (filtered.length === 0) { document.getElementById('no-data').style.display = 'block'; return; }
+
+  // ── Snapshot stats ────────────────────────────────────────────────
+  const totalEff   = filtered.reduce((s, r) => s + effective(r), 0);
+  const activeDays = filtered.length;
+  const totalCal   = calDays(start, end);
+  const avgActive  = totalEff / activeDays;
+  const avgCal     = totalEff / totalCal;
+  const peakRow    = filtered.reduce((a, b) => effective(a) > effective(b) ? a : b);
+
+  document.getElementById('stat-total').textContent     = fmt(totalEff);
+  document.getElementById('stat-avg-active').textContent = fmt(avgActive);
+  document.getElementById('stat-avg-cal').textContent   = fmt(avgCal);
+  document.getElementById('stat-days').textContent      = `${activeDays} / ${totalCal}`;
+  document.getElementById('stat-days-sub').textContent  = 'calendar days';
+  document.getElementById('stat-peak').textContent      = fmtShort(peakRow.date);
+  document.getElementById('stat-peak-sub').textContent  = `${fmt(effective(peakRow))} snapshots`;
+  statsEl.style.display = 'grid';
+
+  // ── Snapshot chart ────────────────────────────────────────────────
+  const labels     = filtered.map(r => fmtShort(r.date));
+  const chromeDat  = filtered.map(r => Math.round(r.chrome));
+  const firefoxDat = filtered.map(r => Math.round(r.firefox));
+  const safariDat  = filtered.map(r => Math.round(r.safari));
+  const edgeDat    = filtered.map(r => Math.round(r.edge));
+  const a11yDat    = filtered.map(r => Math.round(r.a11y));
+  const turboDat   = filtered.map(r => Math.round(r.turbo / 5));
+  const effDat     = filtered.map(r => Math.round(effective(r)));
+  const trendDat   = linReg(effDat);
+
+  const chartSection = document.getElementById('chart-section');
+  chartSection.style.display = 'block';
+  chartSection.classList.remove('hidden');
+
+  const wrapH = Math.max(240, Math.min(400, filtered.length * 16 + 80));
+  document.getElementById('chart-wrap').style.height = wrapH + 'px';
+
+  if (snapChart) snapChart.destroy();
+  snapChart = new Chart(document.getElementById('myChart'), {
+    data: {
+      labels,
+      datasets: [
+        { type: 'bar',  label: 'Chrome',          data: chromeDat,  backgroundColor: '#378ADD', stack: 's' },
+        { type: 'bar',  label: 'Firefox',         data: firefoxDat, backgroundColor: '#1D9E75', stack: 's' },
+        { type: 'bar',  label: 'Safari',          data: safariDat,  backgroundColor: '#D85A30', stack: 's' },
+        { type: 'bar',  label: 'Edge',            data: edgeDat,    backgroundColor: '#BA7517', stack: 's' },
+        { type: 'bar',  label: 'Accessibility',   data: a11yDat,    backgroundColor: '#7F77DD', stack: 's' },
+        { type: 'bar',  label: 'TurboSnaps (×⅕)', data: turboDat,  backgroundColor: '#B4B2A9', stack: 's' },
+        {
+          type: 'line', label: 'Trend',           data: trendDat,
+          borderColor: '#E24B4A', borderWidth: 2, borderDash: [4, 3],
+          pointRadius: 0, tension: 0, fill: false,
+          order: -1
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: ctx => fmtDate(filtered[ctx[0].dataIndex].date),
+            label: ctx => ctx.dataset.label === 'Trend'
+              ? `Trend: ${ctx.parsed.y.toLocaleString()}`
+              : `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()}`,
+            footer: items => {
+              const r = filtered[items[0].dataIndex];
+              return `Effective total: ${fmt(effective(r))}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          stacked: true, grid: { display: false },
+          ticks: { font: { size: 11 }, color: '#888780', maxRotation: 45,
+            autoSkip: filtered.length > 20, maxTicksLimit: filtered.length > 20 ? 15 : filtered.length }
+        },
+        y: {
+          stacked: true,
+          grid: { color: 'rgba(180,178,169,0.25)' },
+          ticks: { font: { size: 11 }, color: '#888780',
+            callback: v => v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v }
+        }
+      }
+    }
+  });
+
+  // ── Builds per day chart ──────────────────────────────────────────
+  const buildsSection = document.getElementById('builds-section');
+  buildsSection.style.display = 'block';
+  buildsSection.classList.remove('hidden');
+
+  const buildsDat  = filtered.map(r => r.builds);
+  const buildsTrend = linReg(buildsDat);
+  document.getElementById('builds-chart-wrap').style.height = Math.max(160, Math.min(260, filtered.length * 10 + 80)) + 'px';
+
+  if (buildsChart) buildsChart.destroy();
+  buildsChart = new Chart(document.getElementById('buildsChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Builds', data: buildsDat,
+          borderColor: '#7F77DD', borderWidth: 2,
+          backgroundColor: 'rgba(127,119,221,0.08)', fill: true,
+          pointRadius: filtered.length > 30 ? 0 : 3,
+          pointBackgroundColor: '#7F77DD', tension: 0.3
+        },
+        {
+          label: 'Trend', data: buildsTrend,
+          borderColor: '#E24B4A', borderWidth: 1.5, borderDash: [4, 3],
+          pointRadius: 0, tension: 0, fill: false
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: ctx => fmtDate(filtered[ctx[0].dataIndex].date),
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()} builds`
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#888780', maxRotation: 45,
+          autoSkip: filtered.length > 20, maxTicksLimit: filtered.length > 20 ? 15 : filtered.length } },
+        y: { grid: { color: 'rgba(180,178,169,0.25)' },
+          ticks: { font: { size: 11 }, color: '#888780' }, beginAtZero: true }
+      }
+    }
+  });
+
+  // ── TurboSnap health ──────────────────────────────────────────────
+  const turboSection = document.getElementById('turbo-section');
+  turboSection.style.display = 'block';
+  turboSection.classList.remove('hidden');
+
+  const totalBuilds  = filtered.reduce((s, r) => s + r.builds, 0);
+  const turboBuilds  = filtered.reduce((s, r) => s + r.turboBuilds, 0);
+  const bailBuilds   = filtered.reduce((s, r) => s + r.bailBuilds, 0);
+  const turboPct     = totalBuilds ? turboBuilds / totalBuilds : 0;
+  const bailPct      = totalBuilds ? bailBuilds / totalBuilds : 0;
+
+  // Aggregate bail reasons
+  const allBailReasons = {};
+  filtered.forEach(r => {
+    Object.entries(r.bailReasons).forEach(([reason, count]) => {
+      allBailReasons[reason] = (allBailReasons[reason] || 0) + count;
+    });
+  });
+  const totalBails = Object.values(allBailReasons).reduce((s, v) => s + v, 0);
+
+  // Estimated savings: turboSnaps represent builds that DIDN'T do a full snapshot.
+  // TurboSnaps used = turbo count. Each TurboSnap = 1/5 of a full snap.
+  // Savings = (turbo - turbo/5) = turbo * 4/5
+  const totalTurboRaw = filtered.reduce((s, r) => s + r.turbo, 0);
+  const savedSnaps = Math.round(totalTurboRaw * 4 / 5);
+
+  // Color coding
+  const tpEl = document.getElementById('ts-turbo-pct-card');
+  tpEl.className = 'turbo-stat ' + (turboPct >= 0.5 ? 'good' : turboPct >= 0.25 ? 'warn' : 'bad');
+  const bpEl = document.getElementById('ts-bail-pct-card');
+  bpEl.className = 'turbo-stat ' + (bailPct <= 0.10 ? 'good' : bailPct <= 0.25 ? 'warn' : 'bad');
+
+  document.getElementById('ts-total-val').textContent  = fmt(totalBuilds);
+  document.getElementById('ts-turbo-pct').textContent  = pct(turboPct);
+  document.getElementById('ts-bail-pct').textContent   = pct(bailPct);
+  document.getElementById('ts-savings').textContent    = fmt(savedSnaps);
+
+  // Bail reasons
+  const bailWrap = document.getElementById('bail-reasons-wrap');
+  if (totalBails > 0) {
+    bailWrap.style.display = 'block';
+    const sorted = Object.entries(allBailReasons).sort((a, b) => b[1] - a[1]);
+    const maxCount = sorted[0][1];
+
+    const REASON_LABELS = {
+      changedPackageFiles:   'changedPackageFiles — dependency change',
+      changedExternalFiles:  'changedExternalFiles — non-story file changed',
+      changedStorybookFiles: 'changedStorybookFiles — Storybook config changed',
+      rebuild:               'rebuild — explicit rebuild triggered',
+      noAncestorBuild:       'noAncestorBuild — no baseline to compare',
+    };
+    const REASON_COLOR = {
+      changedPackageFiles:   '',
+      changedExternalFiles:  '',
+      changedStorybookFiles: 'ok',
+      rebuild:               'ok',
+      noAncestorBuild:       'minor',
+    };
+
+    document.getElementById('bail-reasons-list').innerHTML = sorted.map(([reason, count]) => {
+      const barPct = (count / maxCount * 100).toFixed(1);
+      const label = REASON_LABELS[reason] || reason;
+      const cls   = REASON_COLOR[reason] || '';
+      return `
+        <div class="bail-row">
+          <div class="bail-label" title="${reason}">${label}</div>
+          <div class="bail-bar-wrap"><div class="bail-bar ${cls}" style="width:${barPct}%"></div></div>
+          <div class="bail-count">${count.toLocaleString()} (${(count/totalBails*100).toFixed(0)}%)</div>
+        </div>`;
+    }).join('');
+  } else {
+    bailWrap.style.display = 'none';
+  }
+
+  // Diagnosis
+  const diagEl = document.getElementById('turbo-diagnosis');
+  const diags = [];
+
+  if (turboPct < 0.25) {
+    diags.push({ cls: 'warn', msg: `Only ${pct(turboPct)} of builds are using TurboSnap. This is low — TurboSnap works best on branches where only a few stories change. Check that TurboSnap is enabled for all apps and that builds aren't being force-rebuilt.` });
+  } else if (turboPct >= 0.6) {
+    diags.push({ cls: 'good', msg: `${pct(turboPct)} of builds are using TurboSnap — solid coverage. Each TurboSnap build costs just 1/5 of a standard snapshot.` });
+  }
+
+  if (bailPct > 0.25) {
+    diags.push({ cls: 'warn', msg: `${pct(bailPct)} of builds are bailing out of TurboSnap, which means those builds fall back to full snapshots and use your quota heavily. Review the bail reasons below to understand what's triggering full rebuilds.` });
+  }
+
+  const changedPkg = allBailReasons['changedPackageFiles'] || 0;
+  const changedExt = allBailReasons['changedExternalFiles'] || 0;
+  if (changedPkg > 0) {
+    diags.push({ cls: 'info', msg: `${changedPkg.toLocaleString()} builds bailed due to <strong>changedPackageFiles</strong> — a dependency (package.json or lock file) changed. This is expected but if it's happening frequently, consider whether all dependency updates need visual testing or if some can be grouped.` });
+  }
+  if (changedExt > 0) {
+    diags.push({ cls: 'info', msg: `${changedExt.toLocaleString()} builds bailed due to <strong>changedExternalFiles</strong> — a non-story file (like a global CSS or utility) was modified that Storybook can't scope to specific stories. Scoping global imports more precisely can reduce these bails.` });
+  }
+  if (allBailReasons['noAncestorBuild']) {
+    diags.push({ cls: 'info', msg: `${allBailReasons['noAncestorBuild']} builds had no ancestor build to compare against. This often happens on new branches or after squash merges that lose build history.` });
+  }
+
+  // Build count trend diagnosis
+  const firstHalfBuilds = buildsDat.slice(0, Math.floor(buildsDat.length / 2)).reduce((s, v) => s + v, 0);
+  const secondHalfBuilds = buildsDat.slice(Math.floor(buildsDat.length / 2)).reduce((s, v) => s + v, 0);
+  if (secondHalfBuilds > firstHalfBuilds * 1.3) {
+    diags.push({ cls: 'warn', msg: `Build volume increased by ~${Math.round((secondHalfBuilds / firstHalfBuilds - 1) * 100)}% in the second half of this period. More builds = more snapshots even at the same bail rate. Check if additional branches, apps, or CI triggers were added.` });
+  } else if (secondHalfBuilds < firstHalfBuilds * 0.7) {
+    diags.push({ cls: 'info', msg: `Build volume decreased by ~${Math.round((1 - secondHalfBuilds / firstHalfBuilds) * 100)}% in the second half of this period — snapshot usage should follow suit.` });
+  }
+
+  diagEl.innerHTML = diags.map(d => `<div class="diagnosis ${d.cls}" style="margin-top:12px;">${d.msg}</div>`).join('');
+
+  // ── Daily table ───────────────────────────────────────────────────
+  const tableSection = document.getElementById('table-section');
+  tableSection.style.display = 'block';
+  document.getElementById('row-count').textContent = `${activeDays} days`;
+
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+  filtered.forEach(r => {
+    const eff = effective(r);
+    const isHigh = eff > avgActive * 1.5;
+    const isLow  = eff > 0 && eff < avgActive * 0.25;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${fmtDate(r.date)} ${isHigh ? '<span class="badge badge-high">high</span>' : isLow ? '<span class="badge badge-low">low</span>' : ''}</td>
+      <td class="num">${fmt(r.builds)}</td>
+      <td class="num">${fmt(r.turbo)}</td>
+      <td class="num">${fmt(r.chrome)}</td>
+      <td class="num">${fmt(r.firefox)}</td>
+      <td class="num">${fmt(r.safari)}</td>
+      <td class="num">${fmt(r.edge)}</td>
+      <td class="num">${fmt(r.a11y)}</td>
+      <td class="num" style="font-weight:500;">${fmt(eff)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+</script>
+</body>
+</html>
